@@ -45,10 +45,20 @@ def run(p: Params) -> dict:
 
     # camera keyframe for each sample, with its QC verdict
     cam_frames = frames[frames["is_key_frame"] & (frames["channel"] == cam)].merge(
-        frames_qc[["frame_token", "qc_pass", "qc_error", "sync_ok"]], on="frame_token"
+        frames_qc[["frame_token", "qc_pass", "qc_error", "sync_ok", "calib_ok"]], on="frame_token"
     )
     samples = samples.merge(
-        cam_frames[["sample_token", "frame_token", "filename", "qc_pass", "qc_error", "sync_ok"]],
+        cam_frames[
+            [
+                "sample_token",
+                "frame_token",
+                "filename",
+                "qc_pass",
+                "qc_error",
+                "sync_ok",
+                "calib_ok",
+            ]
+        ],
         on="sample_token",
         how="left",
     )
@@ -58,6 +68,9 @@ def run(p: Params) -> dict:
         "camera_qc_error"
     )
     samples.loc[~samples["sync_ok"].fillna(True).astype(bool), "not_ready_reason"] = "out_of_sync"
+    samples.loc[~samples["calib_ok"].fillna(True).astype(bool), "not_ready_reason"] = (
+        "calibration_suspect"
+    )
     samples["ml_ready"] = samples["not_ready_reason"].isna()
 
     regression_tags = set(p.curation.regression_tags)
@@ -70,7 +83,7 @@ def run(p: Params) -> dict:
     ]
     labels, dropped = labels2d.project_labels(ready, annotations, labels_qc, p)
     samples = (
-        samples.drop(columns=["qc_pass", "qc_error", "sync_ok"])
+        samples.drop(columns=["qc_pass", "qc_error", "sync_ok", "calib_ok"])
         .sort_values(["split", "scene_name", "sample_timestamp"])
         .reset_index(drop=True)
     )

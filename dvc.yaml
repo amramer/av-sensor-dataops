@@ -54,15 +54,20 @@ stages:
       - data/silver/annotations.parquet
       - data/silver/sync.parquet
       - data/silver/frame_features.parquet
+      - ${data.raw_dir}/samples           # LiDAR keyframes for the calibration check
       - src/avdata/quality
+      - src/avdata/fusion/frames.py
     params:
       - quality
       - sensors.nominal_hz
       - curation.min_visibility
+      - curation.camera
+      - fusion.lidar_channel
     outs:
       - data/silver/frames_qc.parquet
       - data/silver/annotations_qc.parquet
       - reports/quality/issues.parquet
+      - reports/quality/projection.parquet
     metrics:
       - reports/quality/summary.json:
           cache: false
@@ -150,3 +155,56 @@ stages:
       - models/detector.onnx
       - models/model_card.json:
           cache: false
+
+  fuse3d:
+    cmd: avdata fuse3d
+    deps:
+      - data/silver/frames.parquet
+      - data/silver/annotations.parquet
+      - data/silver/frames_qc.parquet
+      - data/gold
+      - ${data.raw_dir}/samples
+      - models/detector.onnx
+      - src/avdata/fusion
+      - src/avdata/serve/inference.py
+    params:
+      - fusion
+      - curation.camera
+    outs:
+      - data/predictions
+      - reports/results_nusc.json
+      - models/fusion.json:
+          cache: false
+    metrics:
+      - metrics/eval3d.json:
+          cache: false
+
+  viz:
+    cmd: avdata viz
+    deps:
+      - data/predictions
+      - metrics/eval3d.json
+      - data/silver/frames.parquet
+      - data/gold
+      - ${data.raw_dir}/samples
+      - src/avdata/viz
+    params:
+      - viz.samples
+      - viz.failures
+      - viz.bev_range_m
+    outs:
+      - reports/viz
+
+  demo_bundle:
+    cmd: avdata demo-bundle
+    deps:
+      - data/gold
+      - data/silver/frames.parquet
+      - data/silver/annotations.parquet
+      - ${data.raw_dir}/samples
+      - src/avdata/serve/demo.py
+    params:
+      - viz.demo_samples
+      - fusion.class_range_m
+    outs:
+      - demo

@@ -28,6 +28,7 @@ class Tables:
     features: pd.DataFrame
     annotations: pd.DataFrame
     sync: pd.DataFrame
+    projection: pd.DataFrame | None = None  # LiDAR-in-camera share per keyframe pair
 
     @property
     def frames_features(self) -> pd.DataFrame:
@@ -208,6 +209,76 @@ CHECKS: list[Callable[[Tables, Params], list[dict]]] = [
 ]
 
 
+# ---------------------------------------------------------------- multi-sensor calibration
+def projection_shares(t: Tables, p: Params) -> pd.DataFrame:
+    """Share of each LiDAR keyframe's ground points that land inside the paired camera image.
+
+    Ground returns surround the car evenly, so for a fixed camera and LiDAR the
+    share mostly depends on the camera's field of view and mounting, not on
+    scene content (objects are excluded on purpose: a truck next to the car
+    would change the share). A frame far from the median points to a
+    calibration problem: wrong intrinsics, wrong extrinsics, or data logged
+    under the wrong sensor.
+    """
+    from avdata.fusion.frames import frame_from_rows, project
+    from avdata.fusion.lift import estimate_ground
+
+    cols = ["sample_token", "frame_token", "scene_name", "share", "n_points"]
+    cam_ch, lid_ch = p.curation.camera, p.fusion.lidar_channel
+    if not {cam_ch, lid_ch} <= set(p.sensors.enabled):
+        return pd.DataFrame(columns=cols)
+    ff = t.frames_features
+    ok = ff["is_key_frame"] & ff["decode_ok"].fillna(False).astype(bool)
+    cams = ff[ok & (ff["channel"] == cam_ch)]
+    lids = ff[ok & (ff["channel"] == lid_ch)].set_index("sample_token")
+    rows = []
+    for c in cams.itertuples():
+        if c.sample_token not in lids.index:
+            continue
+        lr = lids.loc[c.sample_token]
+        fr = frame_from_rows(c, lr, p.data.raw_dir)
+        ego = fr.points_ego
+        ground = ego[2] < estimate_ground(ego) + 0.2
+        _, _, inside = project(fr.points_cam[:, ground], fr.K, fr.width, fr.height)
+        if inside.size == 0:
+            continue
+        rows.append(
+            {
+                "sample_token": c.sample_token,
+                "frame_token": c.frame_token,
+                "scene_name": c.scene_name,
+                "share": float(inside.mean()),
+                "n_points": int(inside.size),
+            }
+        )
+    return pd.DataFrame(rows, columns=cols)
+
+
+def calibration_suspect(t: Tables, p: Params) -> list[dict]:
+    proj = t.projection
+    if proj is None or len(proj) < 3:
+        return []
+    med = float(proj["share"].median())
+    tol = p.quality.projection_ratio_tolerance
+    proj = proj.assign(ratio=proj["share"] / max(med, 1e-9))
+    bad = proj[(proj["ratio"] > tol) | (proj["ratio"] < 1 / tol)]
+    return _issues(
+        bad,
+        "calibration_suspect",
+        WARN,
+        "frame",
+        "frame_token",
+        lambda r: (
+            f"{r['share']:.1%} of LiDAR ground points land in the image vs "
+            f"median {med:.1%} (x{r['ratio']:.2f}): check intrinsics/extrinsics"
+        ),
+        "share",
+    )
+
+
+CHECKS.insert(CHECKS.index(weak_labels), calibration_suspect)
+
+
 def frame_status(t: Tables, issues: pd.DataFrame) -> pd.DataFrame:
     """Per-frame QC verdict used downstream to decide ML readiness."""
     frames = t.frames[
@@ -231,7 +302,9 @@ def frame_status(t: Tables, issues: pd.DataFrame) -> pd.DataFrame:
             frames["sample_token"], frames["channel"], frames["is_key_frame"], strict=True
         )
     ]
-    frames["qc_pass"] = ~frames["qc_error"] & frames["sync_ok"]
+    calib_bad = set(fi.loc[fi["check"] == "calibration_suspect", "entity_id"])
+    frames["calib_ok"] = ~frames["frame_token"].isin(calib_bad)
+    frames["qc_pass"] = ~frames["qc_error"] & frames["sync_ok"] & frames["calib_ok"]
     return frames
 
 

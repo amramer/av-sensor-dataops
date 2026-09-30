@@ -489,6 +489,94 @@
       },
       "options": {},
       "id": 11
+    },
+    {
+      "type": "barchart",
+      "title": "3D detection (camera + LiDAR): AP per class, latest model",
+      "description": "nuScenes-style AP (centre distance 0.5-4 m) of 2D detections lifted with LiDAR",
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "kpi-postgres"
+          },
+          "rawSql": "SELECT replace(slice, '3d_detector:', '') AS class_name, value AS ap FROM model_metrics WHERE metric = 'ap' AND slice LIKE '3d_detector:%' AND run_id = (SELECT run_id FROM model_metrics WHERE slice LIKE '3d_%' ORDER BY published_at DESC LIMIT 1) ORDER BY value",
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code",
+          "refId": "A"
+        }
+      ],
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "kpi-postgres"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 35,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#2a78d6"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "orientation": "horizontal",
+        "xField": "class_name"
+      },
+      "id": 12
+    },
+    {
+      "type": "timeseries",
+      "title": "3D mAP and NDS-lite across model versions",
+      "description": "",
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "kpi-postgres"
+          },
+          "rawSql": "SELECT published_at AS time, slice || ' ' || metric AS metric, value FROM model_metrics WHERE slice IN ('3d_detector', '3d_oracle_2d') AND metric IN ('mAP', 'NDS_lite') ORDER BY 1",
+          "format": "time_series",
+          "rawQuery": true,
+          "editorMode": "code",
+          "refId": "A"
+        }
+      ],
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "kpi-postgres"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 35,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 0,
+            "showPoints": "always",
+            "pointSize": 8
+          }
+        },
+        "overrides": []
+      },
+      "options": {},
+      "id": 13
     }
   ],
   "templating": {

@@ -93,6 +93,7 @@ jobs:
             reports/
             metrics/
             models/model_card.json
+            models/fusion.json
       - name: API container smoke test
         run: |
           docker build -f docker/Dockerfile.serve -t avdata-api:ci .
@@ -101,6 +102,11 @@ jobs:
           img=$(ls data/ml_ready/yolo/images/test/*.jpg | head -1)
           curl -sf -F "image=@${img}" localhost:8000/predict | tee predict.json
           python -c "import json; r=json.load(open('predict.json')); assert 'detections' in r"
+          curl -sf -o annotated.jpg -F "image=@${img}" localhost:8000/predict/image
+          id=$(curl -sf localhost:8000/api/samples | python -c "import json,sys; print(json.load(sys.stdin)[0]['id'])")
+          curl -sf "localhost:8000/api/samples/${id}/detect3d" | tee detect3d.json
+          curl -sf -o render.jpg "localhost:8000/api/samples/${id}/render.jpg"
+          curl -sf localhost:8000/ | grep -q "Camera + LiDAR"
           curl -sf localhost:8000/metrics/ | grep avdata_inference_seconds_count
       - if: failure()
         run: docker logs api || true

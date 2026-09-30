@@ -13,6 +13,7 @@ q = load("reports/quality/summary.json")
 k = load("reports/kpis.json")
 c = load("reports/curation.json")
 e = load("metrics/eval.json")
+e3 = load("metrics/eval3d.json")
 g = load("metrics/gate.json")
 cov = k.get("coverage", {})
 
@@ -34,6 +35,9 @@ rows = [
     ("Test mAP50", e.get("overall", {}).get("map50")),
     ("Regression set mAP50", e.get("slices", {}).get("regression_set", {}).get("map50")),
     ("Gate", "passed" if g.get("passed") else "failed"),
+    ("3D mAP, oracle 2D + LiDAR", e3.get("oracle_2d", {}).get("mAP")),
+    ("3D mAP, detector + LiDAR", e3.get("detector", {}).get("mAP")),
+    ("3D mATE (m), oracle 2D", e3.get("oracle_2d", {}).get("mATE")),
 ]
 print("| Metric | Value |\n|---|---|")
 for name, value in rows:

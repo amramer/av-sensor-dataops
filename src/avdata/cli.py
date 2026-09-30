@@ -142,6 +142,42 @@ def export_onnx(params: ParamsOpt = Path("params.yaml")) -> None:
 
 
 @app.command()
+def fuse3d(params: ParamsOpt = Path("params.yaml")) -> None:
+    """Camera + LiDAR 3D detection on the test split + nuScenes-style evaluation."""
+    from avdata.fusion import run as stage
+
+    result = stage.run(load_params(params))
+    _echo(
+        {
+            k: v
+            for k, v in result.items()
+            if k in ("oracle_2d", "detector") or not isinstance(v, dict)
+        }
+    )
+
+
+@app.command()
+def viz(params: ParamsOpt = Path("params.yaml")) -> None:
+    """Visual outputs: camera + BEV renders, scene GIFs, failure gallery, HTML gallery."""
+    from avdata.viz import run as stage
+
+    _echo(stage.run(load_params(params)))
+
+
+@app.command("demo-bundle")
+def demo_bundle(
+    params: ParamsOpt = Path("params.yaml"),
+    n: Annotated[
+        int | None, typer.Option(help="number of samples (default: viz.demo_samples)")
+    ] = None,
+) -> None:
+    """Package test samples (camera, LiDAR, calibration, GT) for the demo API."""
+    from avdata.serve import demo
+
+    _echo(demo.build(load_params(params), n))
+
+
+@app.command()
 def benchmark(
     runs: int = 100,
     warmup: int = 10,

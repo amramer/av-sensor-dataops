@@ -48,6 +48,8 @@ def evaluate(t: checks.Tables, p: Params) -> pd.DataFrame:
     records += schemas.validate(schemas.FRAMES, t.frames)
     records += schemas.validate(schemas.ANNOTATIONS, t.annotations)
     records += schemas.validate(schemas.FEATURES, t.features)
+    if t.projection is None:
+        t.projection = checks.projection_shares(t, p)
     for check in checks.CHECKS:
         found = check(t, p)
         log.info("  %-26s %5d issue(s)", check.__name__, len(found))
@@ -94,6 +96,9 @@ def run(p: Params) -> dict:
     summary = summarize(t, issues, frames_qc, labels_qc)
 
     write_parquet(issues, paths.QUALITY_REPORTS / "issues.parquet")
+    write_parquet(t.projection, paths.QUALITY_REPORTS / "projection.parquet")
+    if len(t.projection):
+        summary["lidar_in_camera_share_median"] = round(float(t.projection["share"].median()), 4)
     write_parquet(frames_qc, paths.FRAMES_QC)
     write_parquet(labels_qc, paths.ANNOTATIONS_QC)
     write_json(summary, paths.QUALITY_REPORTS / "summary.json")

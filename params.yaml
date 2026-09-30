@@ -35,6 +35,7 @@ quality:
   min_lidar_points: 5000          # fewer points = degraded / blocked lidar sweep
   min_box_lidar_points: 1         # boxes with fewer lidar points are weak labels
   night_brightness_max: 90        # "night" scenes brighter than this are flagged as metadata issues
+  projection_ratio_tolerance: 1.3 # LiDAR-in-camera share outside [median/x, median*x] -> calibration suspect
   max_error_issues: 0             # pipeline fails if ERROR issues exceed this
 
 curation:
@@ -77,6 +78,34 @@ train:
 gate:
   min_map50: 0.25                 # new model must reach this on the test split
   max_slice_drop: 0.10            # and no regression slice may drop more than this vs. baseline
+
+fusion:
+  lidar_channel: LIDAR_TOP        # LiDAR used to lift camera detections to 3D
+  score_threshold: 0.25           # 2D detections below this are ignored
+  box_shrink: 0.1                 # shrink 2D boxes before collecting frustum points
+  ground_offset_m: 0.3            # points closer than this to the ground are ignored
+  min_points: 3                   # fewer frustum points -> monocular fallback
+  cluster_gap_m: 0.8              # depth gap that separates object from background
+  near_percentile: 10             # robust "nearest surface" of the object
+  eval_thresholds_m: [0.5, 1.0, 2.0, 4.0]   # nuScenes centre-distance thresholds
+  tp_threshold_m: 2.0             # threshold for ATE / ASE / AOE
+  class_range_m:                  # nuScenes evaluation range per class
+    car: 50
+    truck: 50
+    bus: 50
+    trailer: 50
+    construction_vehicle: 50
+    pedestrian: 40
+    motorcycle: 40
+    bicycle: 40
+    traffic_cone: 30
+    barrier: 30
+
+viz:
+  samples: 12                     # rendered test samples (camera + BEV)
+  failures: 6                     # worst frames by missed objects
+  bev_range_m: 60                 # forward range of the bird's-eye view
+  demo_samples: 16                # samples bundled with the demo API
 
 kpi:
   db_url: sqlite:///reports/kpi.db   # overridden by AVDATA_KPI_DB_URL (Postgres in docker compose)

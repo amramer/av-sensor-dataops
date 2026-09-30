@@ -3,6 +3,8 @@
 .dvc/cache
 .dvc/tmp
 data
+dist
+site
 runs
 mlflow.db
 mlruns

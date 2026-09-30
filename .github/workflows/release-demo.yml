@@ -1,0 +1,95 @@
+# Publish the demo: model + demo samples bundle (GitHub release asset),
+# redeploy the live API on Render, and publish the results site on GitHub Pages.
+#
+# Runs on a model release tag (model-*) or by hand. With DVC remote secrets it
+# uses the real, promoted model and nuScenes samples from the remote; without
+# them it runs the whole pipeline on the synthetic dataset, so the workflow
+# works on a fresh fork.
+#
+# One-time setup:
+#   Settings -> Pages -> Source: GitHub Actions
+#   Secrets: DVC_ACCESS_KEY_ID, DVC_SECRET_ACCESS_KEY (optional), RENDER_DEPLOY_HOOK (optional)
+#   Variables: DEMO_URL = https://<your-service>.onrender.com (optional)
+name: release-demo
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ["model-*"]
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: release-demo
+  cancel-in-progress: false
+
+jobs:
+  bundle:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.DVC_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.DVC_SECRET_ACCESS_KEY }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.11" }
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: "17" }
+      - uses: astral-sh/setup-uv@v6
+
+      - name: Real data from the DVC remote
+        if: env.AWS_ACCESS_KEY_ID != ''
+        run: |
+          uv pip install --system -e ".[serve,dvc]"
+          dvc pull models/detector.onnx demo reports/viz
+          echo "SOURCE=nuScenes (DVC remote)" >> "$GITHUB_ENV"
+
+      - name: Synthetic data (no DVC remote configured)
+        if: env.AWS_ACCESS_KEY_ID == ''
+        run: |
+          uv pip install --system torch torchvision --index-url https://download.pytorch.org/whl/cpu
+          uv pip install --system -e ".[spark,serve,train,dvc]"
+          avdata fixture data/raw/nuscenes
+          python scripts/ci_params.py
+          dvc repro
+          echo "SOURCE=synthetic fixture" >> "$GITHUB_ENV"
+
+      - name: Package and publish the bundle
+        run: |
+          python scripts/package_demo.py
+          gh release view demo-latest >/dev/null 2>&1 || \
+            gh release create demo-latest --title "Demo bundle" --prerelease \
+              --notes "Model + demo samples for the hosted demo. Updated by release-demo.yml."
+          gh release upload demo-latest dist/demo-bundle.tar.gz --clobber
+          echo "Bundle published (source: $SOURCE)" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Redeploy the live demo on Render
+        env:
+          HOOK: ${{ secrets.RENDER_DEPLOY_HOOK }}
+        run: |
+          if [ -n "$HOOK" ]; then curl -fsS -X POST "$HOOK" && echo "Render redeploy triggered" >> "$GITHUB_STEP_SUMMARY"
+          else echo "RENDER_DEPLOY_HOOK not set - skipping" >> "$GITHUB_STEP_SUMMARY"; fi
+
+      - name: Build the results site
+        run: >
+          python scripts/build_site.py
+          --demo-url "${{ vars.DEMO_URL }}"
+          --repo-url "${{ github.server_url }}/${{ github.repository }}"
+      - uses: actions/upload-pages-artifact@v3
+        with: { path: site }
+
+  pages:
+    needs: bundle
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - id: deploy
+        uses: actions/deploy-pages@v4

@@ -24,3 +24,5 @@ htmlcov/
 .env
 /airflow/logs/
 /data/landing/
+/dist/
+/site/

@@ -7,15 +7,19 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
     MODEL_PATH=/app/models/detector.onnx \
-    MODEL_CARD=/app/models/model_card.json
+    MODEL_CARD=/app/models/model_card.json \
+    FUSION_CONFIG=/app/models/fusion.json \
+    DEMO_DIR=/app/demo
 
 WORKDIR /app
 COPY pyproject.toml README.md ./
 COPY src ./src
 RUN pip install ".[serve]" \
     && useradd --create-home --uid 1000 app
-# Models are mounted at runtime (or baked in by CI after `dvc pull`)
+# Model, fusion config and demo samples are baked in by CI after `dvc repro`/`dvc pull`
+# (or mounted at runtime); docker/Dockerfile.render downloads them instead.
 COPY models/ ./models/
+COPY demo/ ./demo/
 USER app
 
 EXPOSE 8000

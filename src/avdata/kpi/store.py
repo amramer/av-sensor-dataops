@@ -41,6 +41,21 @@ def flatten(d: dict, prefix: str = "") -> dict[str, float]:
     return out
 
 
+def eval3d_rows(ev3: dict) -> list[dict]:
+    """3D metrics as model_metrics rows: slice '3d_<mode>' and '3d_<mode>:<class>'."""
+    rows = []
+    for mode in ("oracle_2d", "detector"):
+        e = ev3.get(mode)
+        if not e:
+            continue
+        for m in ("mAP", "NDS_lite", "mATE", "mASE", "mAOE"):
+            if e.get(m) is not None:
+                rows.append({"slice": f"3d_{mode}", "metric": m, "value": float(e[m])})
+        for cls, c in e.get("per_class", {}).items():
+            rows.append({"slice": f"3d_{mode}:{cls}", "metric": "ap", "value": float(c["ap"])})
+    return rows
+
+
 def dataset_version(kpis_file: Path) -> str:
     """Content fingerprint of the dataset snapshot the KPIs describe."""
     return hashlib.sha256(kpis_file.read_bytes()).hexdigest()[:12]
@@ -81,6 +96,9 @@ def run(p: Params) -> dict:
                 for m, v in ms.items()
                 if isinstance(v, (int, float))
             ]
+            ev3 = paths.METRICS / "eval3d.json"
+            if ev3.exists():
+                rows += eval3d_rows(json.loads(ev3.read_text()))
             mm = pd.DataFrame(rows).assign(**meta, model_version=ev.get("model_version", "unknown"))
             mm.to_sql("model_metrics", conn, if_exists="append", index=False)
             written["model_metrics"] = len(mm)

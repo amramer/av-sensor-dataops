@@ -1,0 +1,23 @@
+# Render Blueprint: the live demo on Render's free tier (no credit card).
+# Render dashboard -> New -> Blueprint -> pick this repository.
+# Then set BUNDLE_URL below (or in the dashboard) to your release asset, and
+# copy the service's Deploy Hook URL into the GitHub secret RENDER_DEPLOY_HOOK
+# so every model release redeploys the demo.
+#
+# Free instances sleep after 15 minutes without traffic; the first request
+# after that takes about a minute (the static results site on GitHub Pages is
+# always online).
+services:
+  - type: web
+    name: av-sensor-fusion-demo
+    runtime: docker
+    plan: free
+    dockerfilePath: ./docker/Dockerfile.render
+    dockerContext: .
+    healthCheckPath: /health
+    autoDeploy: false
+    envVars:
+      - key: BUNDLE_URL
+        value: https://github.com/amramer/av-sensor-dataops/releases/download/demo-latest/demo-bundle.tar.gz
+      - key: WEB_CONCURRENCY
+        value: "1"

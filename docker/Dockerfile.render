@@ -1,0 +1,26 @@
+# Hosted demo image (Render free tier, or any Docker PaaS).
+# The model and demo samples are downloaded at start-up from BUNDLE_URL
+# (a GitHub release asset published by .github/workflows/release-demo.yml),
+# so the image builds straight from the Git repository.
+FROM python:3.11-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    APP_ROOT=/app \
+    MODEL_PATH=/app/models/detector.onnx \
+    MODEL_CARD=/app/models/model_card.json \
+    FUSION_CONFIG=/app/models/fusion.json \
+    DEMO_DIR=/app/demo \
+    PORT=10000
+
+WORKDIR /app
+COPY pyproject.toml README.md ./
+COPY src ./src
+RUN pip install ".[serve]" \
+    && useradd --create-home --uid 1000 app \
+    && chown -R app /app
+USER app
+
+EXPOSE 10000
+CMD ["python", "-m", "avdata.serve.bootstrap"]

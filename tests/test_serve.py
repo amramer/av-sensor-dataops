@@ -48,6 +48,7 @@ def client(tmp_path, monkeypatch):
     )
     monkeypatch.setenv("MODEL_PATH", str(tmp_path / "m.onnx"))
     monkeypatch.setenv("MODEL_CARD", str(tmp_path / "card.json"))
+    monkeypatch.setenv("DEMO_DIR", str(tmp_path / "no-demo"))
     from fastapi.testclient import TestClient
 
     from avdata.serve import app as app_module
@@ -63,7 +64,11 @@ def _jpeg(w=128, h=128):
 
 
 def test_health(client):
-    assert client.get("/health").json() == {"status": "ok", "model_version": "test123"}
+    assert client.get("/health").json() == {
+        "status": "ok",
+        "model_version": "test123",
+        "demo_samples": 0,
+    }
 
 
 def test_predict_decodes_and_applies_nms(client):
@@ -91,3 +96,80 @@ def test_metrics_exposed(client):
     client.post("/predict", files={"image": ("x.jpg", _jpeg(), "image/jpeg")})
     text = client.get("/metrics/").text
     assert "avdata_inference_seconds" in text and 'avdata_detections_total{cls="car"}' in text
+
+
+# ------------------------------------------------------------------ camera + LiDAR demo endpoints
+@pytest.fixture()
+def demo_client(tmp_path, monkeypatch, clean_ws):
+    import os
+
+    from fastapi.testclient import TestClient
+
+    from avdata.serve import app as app_module
+    from avdata.serve import demo
+
+    ws, p = clean_ws
+    old = os.getcwd()
+    os.chdir(ws)
+    demo.build(p, n=2, out=tmp_path / "demo")
+    os.chdir(old)
+    make_model(tmp_path / "m.onnx")
+    (tmp_path / "card.json").write_text(json.dumps({"model_version": "t", "classes": CLASSES}))
+    monkeypatch.setenv("MODEL_PATH", str(tmp_path / "m.onnx"))
+    monkeypatch.setenv("MODEL_CARD", str(tmp_path / "card.json"))
+    monkeypatch.setenv("DEMO_DIR", str(tmp_path / "demo"))
+    monkeypatch.setenv("FUSION_CONFIG", str(tmp_path / "none.json"))
+    with TestClient(app_module.app) as c:
+        yield c, tmp_path / "demo"
+
+
+def test_demo_page_and_samples(demo_client):
+    c, _ = demo_client
+    assert "Camera + LiDAR" in c.get("/").text
+    samples = c.get("/api/samples").json()
+    assert len(samples) == 2 and {"id", "scene", "n_gt", "t"} <= set(samples[0])
+    assert c.get("/health").json()["demo_samples"] == 2
+
+
+def test_demo_detect3d_and_render(demo_client):
+    c, _ = demo_client
+    sid = c.get("/api/samples").json()[0]["id"]
+    r = c.get(f"/api/samples/{sid}/detect3d").json()
+    assert {"boxes", "gt_in_view", "gt_matched_2m", "timing_ms"} <= set(r)
+    assert all(b["source"] in ("lidar", "mono") and len(b["center"]) == 3 for b in r["boxes"])
+    img = c.get(f"/api/samples/{sid}/render.jpg")
+    assert img.headers["content-type"] == "image/jpeg" and img.content[:2] == b"\xff\xd8"
+    assert c.get("/api/samples/nope/detect3d").status_code == 404
+
+
+def test_predict3d_with_uploaded_frame(demo_client):
+    c, demo_dir = demo_client
+    sid = c.get("/api/samples").json()[0]["id"]
+    meta = json.loads((demo_dir / sid / "meta.json").read_text())
+    files = {
+        "image": ("cam.jpg", (demo_dir / sid / "camera.jpg").read_bytes(), "image/jpeg"),
+        "lidar": (
+            "lidar.bin",
+            (demo_dir / sid / "lidar.bin").read_bytes(),
+            "application/octet-stream",
+        ),
+    }
+    r = c.post(
+        "/predict3d", files=files, data={"calib": json.dumps(meta["calib"]), "lidar_dims": "4"}
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert len(body["boxes_ego"]) == len(body["boxes_global"]) == 1  # the fake model finds one car
+    bad = c.post("/predict3d", files=files, data={"calib": "{}", "lidar_dims": "4"})
+    assert bad.status_code == 400
+
+
+def test_predict_image_returns_annotated_jpeg(demo_client):
+    c, demo_dir = demo_client
+    sid = c.get("/api/samples").json()[0]["id"]
+    r = c.post(
+        "/predict/image",
+        files={"image": ("x.jpg", (demo_dir / sid / "camera.jpg").read_bytes(), "image/jpeg")},
+    )
+    assert r.status_code == 200 and r.headers["x-detections"] == "1"
+    assert r.content[:2] == b"\xff\xd8"

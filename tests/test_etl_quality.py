@@ -48,7 +48,14 @@ def test_faults_are_detected(faulty_ws):
         quality.run(p)
     issues = pd.read_parquet(paths.QUALITY_REPORTS / "issues.parquet")
     found = set(issues["check"])
-    assert {"corrupt_file", "missing_file", "sync_offset", "frame_gap", "weak_label"} <= found
+    assert {
+        "corrupt_file",
+        "missing_file",
+        "sync_offset",
+        "frame_gap",
+        "weak_label",
+        "calibration_suspect",
+    } <= found
     frames_qc = pd.read_parquet(paths.FRAMES_QC)
     assert not frames_qc["qc_pass"].all()
 

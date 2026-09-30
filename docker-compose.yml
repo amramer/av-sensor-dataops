@@ -70,7 +70,7 @@ services:
 
   api:
     build: { context: ., dockerfile: docker/Dockerfile.serve }
-    volumes: ["./models:/app/models:ro"]
+    volumes: ["./models:/app/models:ro", "./demo:/app/demo:ro"]
     ports: ["8000:8000"]
     profiles: ["api"]  # needs models/detector.onnx: `dvc pull` or `dvc repro export_onnx` first
 

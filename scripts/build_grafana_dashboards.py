@@ -253,6 +253,44 @@ def data_dashboard() -> dict:
                 7,
                 unit="percentunit",
             ),
+            panel(
+                "barchart",
+                "3D detection (camera + LiDAR): AP per class, latest model",
+                [
+                    sql_target(
+                        "SELECT replace(slice, '3d_detector:', '') AS class_name, value AS ap "
+                        "FROM model_metrics WHERE metric = 'ap' AND slice LIKE '3d_detector:%' "
+                        "AND run_id = (SELECT run_id FROM model_metrics WHERE slice LIKE '3d_%' "
+                        "ORDER BY published_at DESC LIMIT 1) ORDER BY value"
+                    )
+                ],
+                0,
+                35,
+                12,
+                8,
+                unit="percentunit",
+                orientation="horizontal",
+                xField="class_name",
+                desc="nuScenes-style AP (centre distance 0.5-4 m), 2D detections lifted with LiDAR",
+            ),
+            panel(
+                "timeseries",
+                "3D mAP and NDS-lite across model versions",
+                [
+                    sql_target(
+                        "SELECT published_at AS time, slice || ' ' || metric AS metric, value "
+                        "FROM model_metrics WHERE slice IN ('3d_detector', '3d_oracle_2d') "
+                        "AND metric IN ('mAP', 'NDS_lite') ORDER BY 1",
+                        "time_series",
+                    )
+                ],
+                12,
+                35,
+                12,
+                8,
+                unit="percentunit",
+                color=None,
+            ),
         ],
     )
 

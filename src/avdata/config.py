@@ -54,6 +54,7 @@ class QualityParams(BaseModel):
     min_lidar_points: int = 5000
     min_box_lidar_points: int = 1
     night_brightness_max: float = 90
+    projection_ratio_tolerance: float = 1.3
     max_error_issues: int = 0
 
 
@@ -92,6 +93,26 @@ class GateParams(BaseModel):
     max_slice_drop: float = 0.10
 
 
+class FusionParams(BaseModel):
+    lidar_channel: str = "LIDAR_TOP"
+    score_threshold: float = 0.25
+    box_shrink: float = Field(0.1, ge=0, lt=0.9)
+    ground_offset_m: float = 0.3
+    min_points: int = Field(3, ge=1)
+    cluster_gap_m: float = Field(0.8, gt=0)
+    near_percentile: float = Field(10, ge=0, le=100)
+    eval_thresholds_m: list[float] = [0.5, 1.0, 2.0, 4.0]
+    tp_threshold_m: float = 2.0
+    class_range_m: dict[str, float] = {}
+
+
+class VizParams(BaseModel):
+    samples: int = 12
+    failures: int = 6
+    bev_range_m: float = 60
+    demo_samples: int = 16
+
+
 class KpiParams(BaseModel):
     db_url: str = "sqlite:///reports/kpi.db"
 
@@ -108,6 +129,8 @@ class Params(BaseModel):
     curation: CurationParams
     train: TrainParams
     gate: GateParams
+    fusion: FusionParams = FusionParams()
+    viz: VizParams = VizParams()
     kpi: KpiParams
 
 
