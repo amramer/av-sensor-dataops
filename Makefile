@@ -51,10 +51,20 @@ dashboards:  ## regenerate Grafana dashboard JSON
 benchmark:  ## ONNX latency on this machine
 	avdata benchmark --runs 200
 
+fusion:  ## camera + LiDAR 3D detection, visual outputs, demo bundle
+	dvc repro fuse3d viz demo_bundle
+
+serve:  ## API + demo UI at http://localhost:8000
+	uvicorn avdata.serve.app:app --port 8000
+
+site:  ## static results site in site/ (GitHub Pages) + demo bundle in dist/
+	python scripts/package_demo.py
+	python scripts/build_site.py
+
 kind:  ## local Kubernetes cluster + API deployment
 	kind create cluster --name avdata --config deploy/k8s/kind-cluster.yaml
 	docker build -f docker/Dockerfile.serve -t ghcr.io/amramer/av-sensor-dataops-api:latest .
 	kind load docker-image ghcr.io/amramer/av-sensor-dataops-api:latest --name avdata
 	kubectl apply -f deploy/k8s/namespace.yaml -f deploy/k8s/api.yaml
 
-.PHONY: help install fixture data pipeline test test-all lint format up airflow api down publish dashboards benchmark kind
+.PHONY: help install fixture data pipeline test test-all lint format up airflow api down publish dashboards benchmark fusion serve site kind

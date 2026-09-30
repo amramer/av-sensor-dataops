@@ -1,15 +1,16 @@
 # av-sensor-dataops
 
-**Automated pipeline that turns raw autonomous-vehicle sensor logs into versioned, quality-checked, ML-ready datasets, then trains, gates, serves and monitors a camera detector on them.**
+**Automated pipeline that turns raw autonomous-vehicle sensor logs into versioned, quality-checked, ML-ready datasets, then trains a camera detector, fuses it with LiDAR into 3D object detection, evaluates it nuScenes-style, and serves it as a monitored API with a live demo.**
 
 Built on [nuScenes](https://www.nuscenes.org/nuscenes) (camera, LiDAR, radar, GPS/IMU recordings from real test vehicles), starting with the front camera and the top LiDAR. More sensors are a config change, not a code change.
 
 ```
-raw sensor logs ─► bronze ─► silver ─► quality gate ─► gold ─► ML-ready ─► train ─► evaluate ─► gate ─► ONNX ─► API
-   (DVC)          Parquet    joined,     schema +        tags,    YOLO       MLflow   per-scenario  regression  model   FastAPI
-                             synced,     sensor + label  splits,  format              slices        checks      card    + Prometheus
-                             features    checks          labels
-                                  └──────────────► Spark KPIs ─► KPI store ─► Grafana
+raw sensor logs ─► bronze ─► silver ─► quality gate ─► gold ─► ML-ready ─► train ─► evaluate ─► gate ─► ONNX ─► API + demo UI
+   (DVC)          Parquet    joined,     schema, sensor, tags,    YOLO       MLflow   per-scenario  regression  model   FastAPI
+                             synced,     calibration +   splits,  format              slices        checks      card    + Prometheus
+                             features    label checks    labels                                        │
+                                  └──────────────► Spark KPIs ─► KPI store ─► Grafana                  ▼
+                                                                          camera + LiDAR 3D fusion ─► 3D metrics ─► visual outputs
 ```
 
 | | |
@@ -19,7 +20,10 @@ raw sensor logs ─► bronze ─► silver ─► quality gate ─► gold ─�
 | **Processing** | pandas / PyArrow, PySpark (parallel decoding, KPI aggregation) |
 | **Data quality** | Pandera schemas + sensor checks (sync, dropped frames, corrupt files, degraded LiDAR) + label checks (weak labels, visibility) |
 | **ML** | YOLOv8 fine-tuning, per-scenario evaluation, regression set, promotion gate, MLflow model registry |
-| **Serving** | ONNX Runtime + FastAPI, Prometheus metrics, latency benchmark (CPU / GPU / Jetson) |
+| **3D perception** | Camera + LiDAR late fusion (frustum lifting), nuScenes-style mAP / ATE / ASE / AOE / NDS-lite, nuScenes submission-format export |
+| **Visual outputs** | Camera views with LiDAR depth and 3D boxes, bird's-eye view, scene animations, failure gallery, HTML results site |
+| **Serving** | ONNX Runtime + FastAPI (2D, 3D, annotated images, demo UI), Prometheus metrics, latency benchmark (CPU / GPU / Jetson) |
+| **Deployment** | Docker, Kubernetes; free hosting: live API on Render, always-on results site on GitHub Pages |
 | **Monitoring** | Grafana: data volume & growth, quality, scenario coverage, label quality, ML readiness, model and service metrics |
 | **Infra** | Docker Compose (MinIO, Postgres, MLflow, Airflow, Prometheus, Grafana), Kubernetes manifests, GitHub Actions |
 
@@ -64,6 +68,9 @@ To scale up, set `data.version: v1.0-trainval` and add trainval parts to `data/r
 | curate | `avdata curate` | `data/gold/samples, labels_2d` | Scenario tags, scene-level stratified splits (no leakage), regression set, 3D→2D box projection, ML-readiness per sample |
 | export_yolo | `avdata export-yolo` | `data/ml_ready/yolo/` | Images + YOLO labels + `data.yaml` + index of tags per image |
 | kpis | `avdata kpis` (Spark) | `reports/kpis.json`, `coverage.html` | Volume, measured sensor rates, sync percentiles, QC pass rates, label quality, coverage matrix with empty cells, class balance |
+| fuse3d | `avdata fuse3d` | `data/predictions/`, `metrics/eval3d.json`, `models/fusion.json` | Camera detections lifted to 3D with LiDAR; evaluated against 3D ground truth with oracle 2D boxes and with the real detector |
+| viz | `avdata viz` | `reports/viz/` | Camera + bird's-eye renders, scene GIFs, failure gallery, LiDAR-on-camera overlays, `index.html` |
+| demo_bundle | `avdata demo-bundle` | `demo/` | Test samples (image, LiDAR, calibration, GT) packaged for the hosted demo |
 | train | `avdata train` | `models/detector.pt` | YOLOv8 fine-tune; MLflow run tagged with git commit + dataset hash |
 | evaluate | `avdata evaluate` | `metrics/eval.json` | mAP overall and per scenario slice (night, rain, location, speed, has_bicycle, …) + regression set |
 | export_onnx | `avdata export-onnx` | `models/detector.onnx`, `model_card.json` | ONNX + model card (classes, input spec, eval, lineage) |
@@ -82,6 +89,7 @@ Outside DVC (they have side effects): `avdata gate` (blocks promotion), `avdata 
 | frame_gap | WARN | dropped frames (gap > 2.5 × nominal period) |
 | low_lidar_points | WARN | blocked or degraded LiDAR sweep |
 | night_metadata_mismatch | WARN | scene says "night" but images are bright (metadata error) |
+| calibration_suspect | WARN | share of LiDAR ground points landing in the camera image far from the median: wrong intrinsics / extrinsics / sensor mix-up (frame excluded from ML-ready) |
 | weak_label | WARN | box with no LiDAR points inside (unverifiable ground truth) |
 
 Frames with ERRORs or sync problems are excluded from the ML-ready set, and the reason is kept per sample. `tests/test_etl_quality.py` injects each fault into a dataset and checks that it is caught.
@@ -95,6 +103,21 @@ sensors:
 ```
 
 `dvc repro` re-runs from `transform`: radar frames get ingested, decoded, rate- and sync-checked and show up in the KPIs. A new modality (e.g. thermal) is one entry in `src/avdata/sensors.py`. `tests/test_etl_quality.py::test_adding_a_sensor_is_config_only` proves it.
+
+## Camera + LiDAR 3D detection
+
+The camera detector finds objects in the image; the LiDAR places them in 3D (`src/avdata/fusion/`):
+
+1. LiDAR points go lidar → ego (LiDAR time) → global → ego (camera time) → camera, so ego motion between the two sensors is compensated.
+2. Points projecting inside each 2D box (the frustum), minus the ground, are split into depth clusters.
+3. The cluster that best combines size with the depth implied by the box height wins; this skips occluders in front and background behind.
+4. Nearest surface + half the object's extent along the viewing ray gives the centre; orientation from the principal axis of the points; size from class priors measured on the training split. Too few points → monocular fallback (`source="mono"`).
+
+It is evaluated like the nuScenes detection benchmark (centre-distance matching at 0.5/1/2/4 m, AP, ATE, ASE, AOE, NDS-lite) in two modes: **oracle 2D** (ground-truth boxes, isolates the fusion geometry) and **detector** (the full system). Predictions are also exported in the nuScenes submission format (`reports/results_nusc.json`). It is a transparent, training-free baseline; a learned fusion model (BEVFusion, CenterPoint + camera) would plug into the same data, evaluation and serving path.
+
+## Visual outputs
+
+`dvc repro viz` writes `reports/viz/index.html`: 3D metrics, per-scene animations, sample renders (camera with LiDAR depth and 3D boxes | bird's-eye view), a failure gallery ranked by missed objects, and LiDAR-on-camera overlays as a visual calibration check. Aqua = ground truth, blue = fused with LiDAR, orange = monocular fallback.
 
 ## Reproducibility and lineage
 
@@ -149,14 +172,25 @@ python scripts/ingest_drive.py --stage scene-0757 scene-0796 scene-0916   # a ne
 
 Free hosted options that fit: Cloudflare R2 (S3 API, no egress fees) or DagsHub as the DVC remote, and DagsHub's hosted MLflow for tracking. Setup: [docs/setup.md](docs/setup.md).
 
-## Serving and edge benchmarking
+## Serving, demo and edge benchmarking
 
 ```bash
-uvicorn avdata.serve.app:app --port 8000
-curl -F image=@some_frame.jpg localhost:8000/predict
-curl localhost:8000/metrics/          # latency histogram, detections per class, input brightness
+uvicorn avdata.serve.app:app --port 8000        # then open http://localhost:8000 for the demo UI
+curl -F image=@frame.jpg localhost:8000/predict                    # 2D detections (JSON)
+curl -F image=@frame.jpg localhost:8000/predict/image -o out.jpg   # annotated image
+curl -F image=@cam.jpg -F lidar=@sweep.bin -F calib=@calib.json -F lidar_dims=5 localhost:8000/predict3d
+curl localhost:8000/api/samples                                    # bundled demo samples
+curl localhost:8000/metrics/          # latency, detections per class, fused boxes by source, input brightness
 avdata benchmark --runs 200           # p50/p95/p99 per stage -> reports/benchmarks/<host>_<provider>.json
 ```
+
+## Free deployment
+
+- **Live API + demo UI on Render (free, no credit card):** `render.yaml` + `docker/Dockerfile.render`. The container downloads the model and demo samples from a GitHub release asset at start-up. Free instances sleep after 15 min idle (about a minute to wake).
+- **Always-on results site on GitHub Pages:** gallery, 3D metrics and the KPI report.
+- **`.github/workflows/release-demo.yml`** builds the bundle (real model from the DVC remote, or the synthetic pipeline on a fresh fork), publishes it as release `demo-latest`, triggers the Render redeploy hook and publishes the site.
+
+Step by step: [docs/deploy.md](docs/deploy.md). Hugging Face moved free Docker Spaces behind PRO for new accounts in 2026; the same image runs there if you have a PRO or legacy quota.
 
 The API exports input brightness and the predicted class mix, so a shift (e.g. far more night traffic than in the training data) is visible in Grafana before accuracy complaints arrive. For NVIDIA Jetson (TensorRT FP16/INT8) see [docs/jetson.md](docs/jetson.md).
 

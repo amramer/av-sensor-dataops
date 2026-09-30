@@ -34,6 +34,25 @@ flowchart LR
 - **gold** is the curated view: which samples are usable, in which split, under which scenario.
 - **ml_ready** is framework-specific (YOLO today). Only this layer changes if the model changes.
 
+## 3D perception path
+
+```mermaid
+flowchart LR
+    C[camera image] --> D[2D detector<br/>ONNX]
+    L[LiDAR sweep] --> T[lidar -> ego t_lidar -> global<br/>-> ego t_cam -> camera]
+    D --> F[frustum per 2D box<br/>minus ground]
+    T --> F
+    F --> K[depth clusters<br/>+ box-height depth prior]
+    K --> B[3D box: centre, yaw,<br/>size prior]
+    B --> E[nuScenes-style eval<br/>oracle vs detector]
+    B --> V[renders, BEV, GIFs,<br/>failure gallery]
+    B --> A[API /predict3d<br/>demo UI]
+```
+
+Evaluating with **oracle 2D boxes** and with the **real detector** separates two questions:
+is the geometry (calibration, time alignment, clustering) right, and how good is the camera
+detector. The calibration check in the quality stage protects the same geometry upstream.
+
 ## Decisions
 
 **DVC for data + pipeline, MLflow for experiments.** DVC answers "which data, code and params
@@ -66,6 +85,14 @@ where it matters.
 **Spark where it pays.** Decoding every file and aggregating KPIs are embarrassingly parallel and
 grow with the fleet; both have a Spark path. Small metadata joins stay in pandas, where they are
 faster on one machine.
+
+**Late fusion as the 3D baseline.** Lifting 2D detections with LiDAR needs no 3D training,
+runs on a CPU, is fully explainable, and exercises every multi-sensor detail a learned model also
+depends on. Its known weaknesses (occlusion, sparse far objects, no velocity) are measured, not
+hidden: per-distance recall, LiDAR vs monocular share, failure gallery.
+
+**Two free hosting targets.** A sleeping free API is not a portfolio link people can rely on,
+so the static results site (GitHub Pages) is always on and links to the live API (Render).
 
 ## Scaling path
 
