@@ -1,0 +1,500 @@
+{
+  "uid": "avdata-data",
+  "title": "Sensor data KPIs",
+  "tags": [
+    "avdata"
+  ],
+  "timezone": "utc",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "1m",
+  "time": {
+    "from": "now-30d",
+    "to": "now"
+  },
+  "panels": [
+    {
+      "type": "stat",
+      "title": "Frames",
+      "description": "All sensor frames ingested (keyframes + sweeps)",
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "kpi-postgres"
+          },
+          "rawSql": "SELECT value FROM kpi_history WHERE metric = 'volume.frames_total' ORDER BY published_at DESC LIMIT 1",
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code",
+          "refId": "A"
+        }
+      ],
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "kpi-postgres"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 6,
+        "h": 4
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#2a78d6"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "none",
+        "graphMode": "none",
+        "textMode": "value"
+      },
+      "id": 1
+    },
+    {
+      "type": "stat",
+      "title": "Data size",
+      "description": "",
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "kpi-postgres"
+          },
+          "rawSql": "SELECT value FROM kpi_history WHERE metric = 'volume.bytes_total' ORDER BY published_at DESC LIMIT 1",
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code",
+          "refId": "A"
+        }
+      ],
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "kpi-postgres"
+      },
+      "gridPos": {
+        "x": 6,
+        "y": 0,
+        "w": 6,
+        "h": 4
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "decbytes",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#2a78d6"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "none",
+        "graphMode": "none",
+        "textMode": "value"
+      },
+      "id": 2
+    },
+    {
+      "type": "stat",
+      "title": "ML-ready samples",
+      "description": "Keyframe samples whose camera frame passed QC and sync checks",
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "kpi-postgres"
+          },
+          "rawSql": "SELECT value FROM kpi_history WHERE metric = 'readiness.ml_ready_rate' ORDER BY published_at DESC LIMIT 1",
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code",
+          "refId": "A"
+        }
+      ],
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "kpi-postgres"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 0,
+        "w": 6,
+        "h": 4
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#2a78d6"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "none",
+        "graphMode": "none",
+        "textMode": "value"
+      },
+      "id": 3
+    },
+    {
+      "type": "stat",
+      "title": "Labels OK",
+      "description": "3D boxes that are neither weak (no lidar points) nor poorly visible",
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "kpi-postgres"
+          },
+          "rawSql": "SELECT value FROM kpi_history WHERE metric = 'labels.ok_rate' ORDER BY published_at DESC LIMIT 1",
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code",
+          "refId": "A"
+        }
+      ],
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "kpi-postgres"
+      },
+      "gridPos": {
+        "x": 18,
+        "y": 0,
+        "w": 6,
+        "h": 4
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#2a78d6"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "none",
+        "graphMode": "none",
+        "textMode": "value"
+      },
+      "id": 4
+    },
+    {
+      "type": "timeseries",
+      "title": "Data growth (frames per pipeline run)",
+      "description": "",
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "kpi-postgres"
+          },
+          "rawSql": "SELECT published_at AS time, value AS frames FROM kpi_history WHERE metric = 'volume.frames_total' ORDER BY 1",
+          "format": "time_series",
+          "rawQuery": true,
+          "editorMode": "code",
+          "refId": "A"
+        }
+      ],
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "kpi-postgres"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 4,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#2a78d6"
+          },
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 0,
+            "showPoints": "always",
+            "pointSize": 8
+          }
+        },
+        "overrides": []
+      },
+      "options": {},
+      "id": 5
+    },
+    {
+      "type": "timeseries",
+      "title": "Frame QC pass rate by channel",
+      "description": "",
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "kpi-postgres"
+          },
+          "rawSql": "SELECT published_at AS time, replace(metric, 'quality.frame_pass_rate_by_channel.', '') AS metric, value FROM kpi_history WHERE metric LIKE 'quality.frame_pass_rate_by_channel.%' ORDER BY 1",
+          "format": "time_series",
+          "rawQuery": true,
+          "editorMode": "code",
+          "refId": "A"
+        }
+      ],
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "kpi-postgres"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 4,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 0,
+            "showPoints": "always",
+            "pointSize": 8
+          }
+        },
+        "overrides": []
+      },
+      "options": {},
+      "id": 6
+    },
+    {
+      "type": "barchart",
+      "title": "Quality issues by check (latest run)",
+      "description": "",
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "kpi-postgres"
+          },
+          "rawSql": "SELECT replace(metric, 'quality.issues.', '') AS check_name, value FROM kpi_history WHERE run_id = (SELECT run_id FROM kpi_history ORDER BY published_at DESC LIMIT 1) AND metric LIKE 'quality.issues.%' ORDER BY value DESC",
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code",
+          "refId": "A"
+        }
+      ],
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "kpi-postgres"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 12,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#2a78d6"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "orientation": "horizontal",
+        "xField": "check_name"
+      },
+      "id": 7
+    },
+    {
+      "type": "table",
+      "title": "Scenario coverage (latest run)",
+      "description": "Sorted ascending: the top rows are the conditions with the least data",
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "kpi-postgres"
+          },
+          "rawSql": "SELECT location, time_of_day, weather, SUM(samples) AS samples, SUM(ml_ready) AS ml_ready FROM coverage WHERE run_id = (SELECT run_id FROM coverage ORDER BY published_at DESC LIMIT 1) GROUP BY 1, 2, 3 ORDER BY samples",
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code",
+          "refId": "A"
+        }
+      ],
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "kpi-postgres"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 12,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#2a78d6"
+          }
+        },
+        "overrides": []
+      },
+      "options": {},
+      "id": 8
+    },
+    {
+      "type": "barchart",
+      "title": "Training boxes per class (latest run)",
+      "description": "",
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "kpi-postgres"
+          },
+          "rawSql": "SELECT replace(metric, 'readiness.train_boxes_by_class.', '') AS class, value FROM kpi_history WHERE run_id = (SELECT run_id FROM kpi_history ORDER BY published_at DESC LIMIT 1) AND metric LIKE 'readiness.train_boxes_by_class.%' ORDER BY value DESC",
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code",
+          "refId": "A"
+        }
+      ],
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "kpi-postgres"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 20,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#2a78d6"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "orientation": "horizontal",
+        "xField": "class"
+      },
+      "id": 9
+    },
+    {
+      "type": "barchart",
+      "title": "Model mAP50 per scenario slice (latest model)",
+      "description": "",
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "kpi-postgres"
+          },
+          "rawSql": "SELECT slice, value AS map50 FROM model_metrics WHERE metric = 'map50' AND run_id = (SELECT run_id FROM model_metrics ORDER BY published_at DESC LIMIT 1) ORDER BY value",
+          "format": "table",
+          "rawQuery": true,
+          "editorMode": "code",
+          "refId": "A"
+        }
+      ],
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "kpi-postgres"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 20,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#2a78d6"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "orientation": "horizontal",
+        "xField": "slice"
+      },
+      "id": 10
+    },
+    {
+      "type": "timeseries",
+      "title": "Test mAP50 across model versions",
+      "description": "",
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "kpi-postgres"
+          },
+          "rawSql": "SELECT published_at AS time, value AS \"test mAP50\" FROM model_metrics WHERE slice = 'test' AND metric = 'map50' ORDER BY 1",
+          "format": "time_series",
+          "rawQuery": true,
+          "editorMode": "code",
+          "refId": "A"
+        }
+      ],
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "kpi-postgres"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 28,
+        "w": 24,
+        "h": 7
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#2a78d6"
+          },
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 0,
+            "showPoints": "always",
+            "pointSize": 8
+          }
+        },
+        "overrides": []
+      },
+      "options": {},
+      "id": 11
+    }
+  ],
+  "templating": {
+    "list": []
+  },
+  "annotations": {
+    "list": []
+  }
+}

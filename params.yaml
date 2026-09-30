@@ -1,0 +1,82 @@
+# Single source of truth for every pipeline setting.
+# DVC tracks each section below as a stage parameter, so changing a value
+# re-runs only the stages that depend on it (`dvc repro`) and the change
+# is visible in `dvc params diff`.
+
+data:
+  raw_dir: data/raw/nuscenes      # nuScenes root: v1.0-mini/, samples/, sweeps/
+  version: v1.0-mini              # v1.0-trainval when you scale up
+  scenes: all                     # "all" or a list of scene names, e.g. [scene-0061, scene-0103]
+                                  # (use a list to simulate drives arriving over time)
+
+sensors:
+  # Channels to process. Adding a sensor = adding its channel here.
+  # Every channel of a supported modality is handled by the same code path
+  # (see src/avdata/sensors.py). Available in nuScenes:
+  #   CAM_FRONT, CAM_FRONT_LEFT, CAM_FRONT_RIGHT, CAM_BACK, CAM_BACK_LEFT, CAM_BACK_RIGHT
+  #   LIDAR_TOP
+  #   RADAR_FRONT, RADAR_FRONT_LEFT, RADAR_FRONT_RIGHT, RADAR_BACK_LEFT, RADAR_BACK_RIGHT
+  enabled: [CAM_FRONT, LIDAR_TOP]
+  reference_channel: LIDAR_TOP    # other sensors are checked for sync against this one
+  nominal_hz:                     # nominal capture rate per modality (nuScenes spec)
+    camera: 12
+    lidar: 20
+    radar: 13
+
+etl:
+  include_sweeps: true            # sweeps = non-keyframes between annotated samples
+  workers: 4                      # parallel workers for per-file feature extraction
+  feature_engine: pandas          # pandas (process pool) | spark
+  image_feature_width: 320        # images are downscaled before computing stats
+
+quality:
+  sync_tolerance_ms: 50           # max |t_sensor - t_reference| at a keyframe
+  gap_factor: 2.5                 # gap > gap_factor * nominal period = dropped frames
+  min_lidar_points: 5000          # fewer points = degraded / blocked lidar sweep
+  min_box_lidar_points: 1         # boxes with fewer lidar points are weak labels
+  night_brightness_max: 90        # "night" scenes brighter than this are flagged as metadata issues
+  max_error_issues: 0             # pipeline fails if ERROR issues exceed this
+
+curation:
+  seed: 42
+  camera: CAM_FRONT               # camera used to build the 2D detection dataset
+  val_fraction: 0.2               # splits are made by scene (no leakage between splits)
+  test_fraction: 0.2
+  stratify_by: time_of_day        # scene-level stratification key
+  min_visibility: 2               # nuScenes visibility bins 1-4 (1 = 0-40% visible)
+  min_box_px: 6                   # drop 2D boxes smaller than this (width or height)
+  speed_bins_mps: [0.5, 5.0]      # stopped < 0.5 <= slow < 5.0 <= moving
+  crowded_min_pedestrians: 5
+  regression_tags: [night, rain, has_bicycle, crowded]   # hard cases every model must pass
+  classes:                        # nuScenes category -> detection class (others ignored)
+    vehicle.car: car
+    vehicle.truck: truck
+    vehicle.bus.bendy: bus
+    vehicle.bus.rigid: bus
+    vehicle.trailer: trailer
+    vehicle.construction: construction_vehicle
+    vehicle.motorcycle: motorcycle
+    vehicle.bicycle: bicycle
+    human.pedestrian.adult: pedestrian
+    human.pedestrian.child: pedestrian
+    human.pedestrian.construction_worker: pedestrian
+    human.pedestrian.police_officer: pedestrian
+    movable_object.trafficcone: traffic_cone
+    movable_object.barrier: barrier
+
+train:
+  model: yolov8n.pt               # pretrained checkpoint to fine-tune
+  epochs: 50
+  imgsz: 640
+  batch: 16
+  seed: 42
+  device: auto                    # auto | cpu | 0
+  workers: 4
+  fraction: 1.0                   # use < 1.0 to train on a sample of the train split
+
+gate:
+  min_map50: 0.25                 # new model must reach this on the test split
+  max_slice_drop: 0.10            # and no regression slice may drop more than this vs. baseline
+
+kpi:
+  db_url: sqlite:///reports/kpi.db   # overridden by AVDATA_KPI_DB_URL (Postgres in docker compose)

@@ -1,0 +1,21 @@
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.6.9
+    hooks:
+      - id: ruff
+        args: [--fix]
+      - id: ruff-format
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.6.0
+    hooks:
+      - id: check-yaml
+        args: [--allow-multiple-documents]
+      - id: check-added-large-files
+        args: [--maxkb=1024]      # data belongs in DVC, not Git
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+  - repo: https://github.com/iterative/dvc
+    rev: 3.55.2
+    hooks:
+      - id: dvc-pre-push
+        stages: [pre-push]        # `git push` also pushes the DVC data it references

@@ -1,0 +1,203 @@
+{
+  "uid": "avdata-api",
+  "title": "Inference service",
+  "tags": [
+    "avdata"
+  ],
+  "timezone": "utc",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "10s",
+  "time": {
+    "from": "now-30d",
+    "to": "now"
+  },
+  "panels": [
+    {
+      "type": "timeseries",
+      "title": "Requests per second by status",
+      "description": "",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum by (status) (rate(avdata_requests_total[5m]))",
+          "legendFormat": "{{status}}",
+          "refId": "A"
+        }
+      ],
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 0,
+            "showPoints": "always",
+            "pointSize": 8
+          }
+        },
+        "overrides": []
+      },
+      "options": {},
+      "id": 1
+    },
+    {
+      "type": "timeseries",
+      "title": "Model latency",
+      "description": "",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "histogram_quantile(0.5, sum by (le) (rate(avdata_inference_seconds_bucket[5m])))",
+          "legendFormat": "p50",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(avdata_inference_seconds_bucket[5m])))",
+          "legendFormat": "p95",
+          "refId": "B"
+        }
+      ],
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 0,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 0,
+            "showPoints": "always",
+            "pointSize": 8
+          }
+        },
+        "overrides": []
+      },
+      "options": {},
+      "id": 2
+    },
+    {
+      "type": "timeseries",
+      "title": "Detections per second by class (output drift)",
+      "description": "",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum by (cls) (rate(avdata_detections_total[5m]))",
+          "legendFormat": "{{cls}}",
+          "refId": "A"
+        }
+      ],
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 8,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 0,
+            "showPoints": "always",
+            "pointSize": 8
+          }
+        },
+        "overrides": []
+      },
+      "options": {},
+      "id": 3
+    },
+    {
+      "type": "timeseries",
+      "title": "Median input brightness (input drift: night vs day traffic)",
+      "description": "Training data brightness comes from the KPI report; a sustained drop means the service sees more night images than the model was trained on.",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "histogram_quantile(0.5, sum by (le) (rate(avdata_input_brightness_bucket[15m])))",
+          "legendFormat": "median grey level",
+          "refId": "A"
+        }
+      ],
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 8,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#eb6834"
+          },
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 0,
+            "showPoints": "always",
+            "pointSize": 8
+          }
+        },
+        "overrides": []
+      },
+      "options": {},
+      "id": 4
+    }
+  ],
+  "templating": {
+    "list": []
+  },
+  "annotations": {
+    "list": []
+  }
+}

@@ -1,0 +1,52 @@
+# Data pipeline on Kubernetes: a shared workspace volume (repo + DVC cache)
+# and a nightly CronJob that runs the DVC pipeline in the pipeline image.
+# With Airflow on Kubernetes (official Helm chart), set AVDATA_RUNNER=k8s and
+# each DAG task becomes a pod from the same image mounting this volume.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: avdata-workspace
+  namespace: avdata
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests: { storage: 50Gi }
+---
+# credentials for the DVC remote / MLflow / KPI store, e.g.:
+#   kubectl -n avdata create secret generic avdata-env \
+#     --from-literal=AWS_ACCESS_KEY_ID=... --from-literal=AWS_SECRET_ACCESS_KEY=... \
+#     --from-literal=AVDATA_KPI_DB_URL=postgresql+psycopg://...
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: avdata-data-pipeline
+  namespace: avdata
+spec:
+  schedule: "0 2 * * *"
+  concurrencyPolicy: Forbid
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      template:
+        spec:
+          restartPolicy: Never
+          initContainers:
+            - name: sync-code   # fetch the latest pipeline definition + data version
+              image: ghcr.io/amramer/av-sensor-dataops-pipeline:latest
+              command: ["sh", "-c", "cd /workspace && git pull --ff-only && dvc pull"]
+              envFrom: [{ secretRef: { name: avdata-env } }]
+              volumeMounts: [{ name: workspace, mountPath: /workspace }]
+          containers:
+            - name: pipeline
+              image: ghcr.io/amramer/av-sensor-dataops-pipeline:latest
+              command: ["sh", "-c"]
+              args:
+                - cd /workspace && dvc repro kpis && avdata publish-kpis && dvc push
+              envFrom: [{ secretRef: { name: avdata-env } }]
+              resources:
+                requests: { cpu: "2", memory: 4Gi }
+                limits: { cpu: "4", memory: 8Gi }
+              volumeMounts: [{ name: workspace, mountPath: /workspace }]
+          volumes:
+            - name: workspace
+              persistentVolumeClaim: { claimName: avdata-workspace }

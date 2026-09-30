@@ -1,0 +1,132 @@
+# Continuous integration: every push and pull request.
+#
+#   lint      ruff (style + static checks)
+#   test      unit + integration tests (ETL, quality, curation, Spark KPIs, API)
+#   pipeline  full `dvc repro` on synthetic nuScenes-format data (incl. CPU training),
+#             quality gate, metrics summary, API container smoke test
+#   images    builds the pipeline image; pushes it to GHCR on main
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  PYTHON_VERSION: "3.11"
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "${{ env.PYTHON_VERSION }}" }
+      - run: pip install ruff
+      - run: ruff check .
+      - run: ruff format --check .
+
+  test:
+    needs: lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "${{ env.PYTHON_VERSION }}" }
+      - uses: actions/setup-java@v4       # PySpark
+        with: { distribution: temurin, java-version: "17" }
+      - uses: astral-sh/setup-uv@v6
+      - run: uv pip install --system -e ".[spark,serve,dev]"
+      - name: Tests (without the slow training test)
+        run: pytest -m "not train" --cov=avdata --cov-report=term-missing:skip-covered
+
+  pipeline:
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }         # git commit ids are part of the lineage record
+      - uses: actions/setup-python@v5
+        with: { python-version: "${{ env.PYTHON_VERSION }}" }
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: "17" }
+      - uses: astral-sh/setup-uv@v6
+      - name: Install (CPU-only PyTorch)
+        run: |
+          uv pip install --system torch torchvision --index-url https://download.pytorch.org/whl/cpu
+          uv pip install --system -e ".[spark,serve,train,dvc,dev]"
+      - name: Synthetic nuScenes-format data + CI training settings
+        run: |
+          avdata fixture data/raw/nuscenes
+          python scripts/ci_params.py
+      - name: Run the whole pipeline (raw -> ONNX)
+        run: dvc repro
+      - name: Quality gate
+        run: avdata gate
+      - name: Pipeline summary
+        run: |
+          {
+            echo "## Pipeline metrics (synthetic data)"
+            dvc metrics show --md
+            echo "## DAG"
+            echo '```'
+            dvc dag
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Reproducibility check (second run must be a no-op)
+        run: |
+          dvc status --json > status.json
+          cat status.json
+          python -c "import json,sys; s=json.load(open('status.json')); sys.exit(1 if s else 0)"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pipeline-reports
+          path: |
+            reports/
+            metrics/
+            models/model_card.json
+      - name: API container smoke test
+        run: |
+          docker build -f docker/Dockerfile.serve -t avdata-api:ci .
+          docker run -d --name api -p 8000:8000 avdata-api:ci
+          for i in $(seq 1 30); do curl -sf localhost:8000/health && break; sleep 2; done
+          img=$(ls data/ml_ready/yolo/images/test/*.jpg | head -1)
+          curl -sf -F "image=@${img}" localhost:8000/predict | tee predict.json
+          python -c "import json; r=json.load(open('predict.json')); assert 'detections' in r"
+          curl -sf localhost:8000/metrics/ | grep avdata_inference_seconds_count
+      - if: failure()
+        run: docker logs api || true
+
+  images:
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        if: github.ref == 'refs/heads/main'
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/Dockerfile.pipeline
+          push: ${{ github.ref == 'refs/heads/main' }}
+          tags: |
+            ghcr.io/${{ github.repository }}-pipeline:latest
+            ghcr.io/${{ github.repository }}-pipeline:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

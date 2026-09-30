@@ -1,0 +1,74 @@
+# Inference API: 2+ replicas, health probes, resource limits, autoscaling on CPU,
+# Prometheus scrape annotations. The model comes from the image (CI bakes the
+# promoted ONNX in) so every rollout is an immutable, versioned artifact.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: avdata-api
+  namespace: avdata
+  labels: { app: avdata-api }
+spec:
+  replicas: 2
+  selector:
+    matchLabels: { app: avdata-api }
+  strategy:
+    type: RollingUpdate
+    rollingUpdate: { maxUnavailable: 0, maxSurge: 1 }
+  template:
+    metadata:
+      labels: { app: avdata-api }
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8000"
+        prometheus.io/path: /metrics/
+    spec:
+      containers:
+        - name: api
+          image: ghcr.io/amramer/av-sensor-dataops-api:latest
+          imagePullPolicy: IfNotPresent
+          ports: [{ containerPort: 8000, name: http }]
+          resources:
+            requests: { cpu: 500m, memory: 512Mi }
+            limits: { cpu: "2", memory: 1Gi }
+          readinessProbe:
+            httpGet: { path: /health, port: http }
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /health, port: http }
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          securityContext:
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+          volumeMounts:
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        - { name: tmp, emptyDir: {} }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: avdata-api
+  namespace: avdata
+spec:
+  type: NodePort
+  selector: { app: avdata-api }
+  ports:
+    - { name: http, port: 80, targetPort: http, nodePort: 30080 }
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: avdata-api
+  namespace: avdata
+spec:
+  scaleTargetRef: { apiVersion: apps/v1, kind: Deployment, name: avdata-api }
+  minReplicas: 2
+  maxReplicas: 6
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target: { type: Utilization, averageUtilization: 70 }

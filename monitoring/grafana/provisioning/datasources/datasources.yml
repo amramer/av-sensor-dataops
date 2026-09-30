@@ -1,0 +1,19 @@
+apiVersion: 1
+datasources:
+  - name: KPI store
+    uid: kpi-postgres
+    type: grafana-postgresql-datasource
+    url: postgres:5432
+    user: avdata
+    database: kpi
+    jsonData:
+      database: kpi
+      sslmode: disable
+      postgresVersion: 1600
+    secureJsonData:
+      password: avdata
+    isDefault: true
+  - name: Prometheus
+    uid: prometheus
+    type: prometheus
+    url: http://prometheus:9090

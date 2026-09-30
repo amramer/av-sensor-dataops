@@ -1,0 +1,25 @@
+# Image for the data pipeline stages (ETL, quality, Spark KPIs, curation).
+# Used by CI, by Airflow tasks (DockerOperator / KubernetesPodOperator) and
+# by the Kubernetes CronJob. Training runs elsewhere (Colab/Kaggle/GPU node).
+FROM python:3.11-slim AS base
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1
+
+# Java for PySpark, git for DVC and lineage (commit ids)
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends default-jre-headless git procps \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /workspace
+COPY pyproject.toml README.md ./
+COPY src ./src
+RUN pip install ".[spark,dvc,postgres]"
+
+# non-root user
+RUN useradd --create-home --uid 1000 avdata && chown -R avdata /workspace
+USER avdata
+
+ENTRYPOINT ["avdata"]
+CMD ["--help"]

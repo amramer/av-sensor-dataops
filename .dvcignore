@@ -1,0 +1,3 @@
+# files DVC should not hash inside tracked folders
+*.cache
+.DS_Store

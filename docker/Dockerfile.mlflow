@@ -1,0 +1,4 @@
+# MLflow tracking server with Postgres backend and S3 (MinIO) artifact store.
+FROM python:3.11-slim
+RUN pip install --no-cache-dir "mlflow==3.16.1" psycopg2-binary boto3
+EXPOSE 5000

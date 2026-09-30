@@ -1,0 +1,115 @@
+# Local platform: everything the pipeline talks to, on one laptop.
+#
+#   docker compose up -d                        # storage, tracking, dashboards, API
+#   docker compose --profile airflow up -d      # + Airflow (http://localhost:8080)
+#
+#   MinIO console   http://localhost:9001   (avdata / avdata-secret)   S3 API :9000
+#   MLflow          http://localhost:5000
+#   Grafana         http://localhost:3000   (admin / admin)
+#   Prometheus      http://localhost:9090
+#   Inference API   http://localhost:8000/docs
+#
+# The same services map 1:1 to managed cloud ones: MinIO -> S3 / Azure Blob,
+# Postgres -> RDS / Azure Database, MLflow -> Databricks / Azure ML tracking.
+
+x-s3-env: &s3-env
+  AWS_ACCESS_KEY_ID: avdata
+  AWS_SECRET_ACCESS_KEY: avdata-secret
+  MLFLOW_S3_ENDPOINT_URL: http://minio:9000
+
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: avdata
+      POSTGRES_PASSWORD: avdata
+      POSTGRES_DB: kpi
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./docker/postgres-init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    ports: ["5432:5432"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U avdata"]
+      interval: 5s
+      retries: 10
+
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: avdata
+      MINIO_ROOT_PASSWORD: avdata-secret
+    volumes: [minio:/data]
+    ports: ["9000:9000", "9001:9001"]
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      retries: 10
+
+  minio-init:  # creates the buckets once, then exits
+    image: minio/mc:latest
+    depends_on:
+      minio: { condition: service_healthy }
+    entrypoint: >
+      sh -c "mc alias set local http://minio:9000 avdata avdata-secret &&
+             mc mb --ignore-existing local/dvc-store &&
+             mc mb --ignore-existing local/mlflow-artifacts"
+
+  mlflow:
+    build: { context: ., dockerfile: docker/Dockerfile.mlflow }
+    command: >
+      mlflow server --host 0.0.0.0 --port 5000
+      --backend-store-uri postgresql://avdata:avdata@postgres:5432/mlflow
+      --artifacts-destination s3://mlflow-artifacts --serve-artifacts
+      --allowed-hosts "localhost,localhost:5000,127.0.0.1:5000,mlflow,mlflow:5000"
+    environment: *s3-env
+    depends_on:
+      postgres: { condition: service_healthy }
+      minio-init: { condition: service_completed_successfully }
+    ports: ["5000:5000"]
+
+  api:
+    build: { context: ., dockerfile: docker/Dockerfile.serve }
+    volumes: ["./models:/app/models:ro"]
+    ports: ["8000:8000"]
+    profiles: ["api"]  # needs models/detector.onnx: `dvc pull` or `dvc repro export_onnx` first
+
+  prometheus:
+    image: prom/prometheus:latest
+    volumes: ["./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro"]
+    ports: ["9090:9090"]
+
+  grafana:
+    image: grafana/grafana:latest
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_USERS_DEFAULT_THEME: light
+    volumes:
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    depends_on: [postgres, prometheus]
+    ports: ["3000:3000"]
+
+  airflow:
+    build: { context: ., dockerfile: docker/Dockerfile.airflow }
+    command: standalone   # webserver + scheduler + triggerer in one container (dev mode)
+    profiles: ["airflow"]
+    environment:
+      <<: *s3-env
+      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://avdata:avdata@postgres:5432/airflow
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AVDATA_PROJECT_DIR: /opt/project
+      AVDATA_KPI_DB_URL: postgresql+psycopg://avdata:avdata@postgres:5432/kpi
+      MLFLOW_TRACKING_URI: http://mlflow:5000
+      GIT_PYTHON_REFRESH: quiet
+    volumes:
+      - ./dags:/opt/airflow/dags:ro
+      - .:/opt/project        # the repo: pipeline runs here, DVC cache included
+    depends_on:
+      postgres: { condition: service_healthy }
+    ports: ["8080:8080"]
+
+volumes:
+  pgdata:
+  minio:

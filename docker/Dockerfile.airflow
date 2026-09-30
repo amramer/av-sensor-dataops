@@ -1,0 +1,17 @@
+# Airflow with the project installed in its OWN virtualenv (/opt/avdata),
+# so the pipeline's dependencies never clash with Airflow's pinned ones.
+# DAG tasks call /opt/avdata/bin/avdata and /opt/avdata/bin/dvc.
+FROM apache/airflow:3.1.0-python3.11
+
+USER root
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends default-jre-headless git \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY pyproject.toml README.md /opt/avdata-src/
+COPY src /opt/avdata-src/src
+RUN python -m venv /opt/avdata \
+    && /opt/avdata/bin/pip install --no-cache-dir "/opt/avdata-src[spark,dvc,postgres]" \
+    && chown -R airflow: /opt/avdata
+USER airflow
+ENV AVDATA_BIN=/opt/avdata/bin

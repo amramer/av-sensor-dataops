@@ -1,0 +1,152 @@
+# Pipeline DAG. `dvc repro` runs only the stages whose code, data or params
+# changed; `dvc dag` draws it; dvc.lock records the hash of every input and
+# output of the last run (the lineage record committed to Git).
+#
+# raw -> bronze -> silver -> quality -> gold -> ml_ready -> model -> onnx
+#                                   \-> kpis (Spark)
+
+stages:
+  extract:
+    cmd: avdata extract
+    deps:
+      - ${data.raw_dir}/${data.version}
+      - src/avdata/etl/extract.py
+    params:
+      - data.version
+    outs:
+      - data/bronze
+
+  transform:
+    cmd: avdata transform
+    deps:
+      - data/bronze
+      - src/avdata/etl/transform.py
+    params:
+      - data.scenes
+      - data.raw_dir
+      - sensors.enabled
+      - sensors.reference_channel
+      - etl.include_sweeps
+      - curation.classes
+    outs:
+      - data/silver/frames.parquet
+      - data/silver/annotations.parquet
+      - data/silver/sync.parquet
+
+  features:
+    cmd: avdata features
+    deps:
+      - data/silver/frames.parquet
+      - ${data.raw_dir}/samples
+      - ${data.raw_dir}/sweeps
+      - src/avdata/etl/features.py
+      - src/avdata/sensors.py
+    params:
+      - etl.feature_engine
+      - etl.image_feature_width
+    outs:
+      - data/silver/frame_features.parquet
+
+  quality:
+    cmd: avdata quality
+    deps:
+      - data/silver/frames.parquet
+      - data/silver/annotations.parquet
+      - data/silver/sync.parquet
+      - data/silver/frame_features.parquet
+      - src/avdata/quality
+    params:
+      - quality
+      - sensors.nominal_hz
+      - curation.min_visibility
+    outs:
+      - data/silver/frames_qc.parquet
+      - data/silver/annotations_qc.parquet
+      - reports/quality/issues.parquet
+    metrics:
+      - reports/quality/summary.json:
+          cache: false
+
+  curate:
+    cmd: avdata curate
+    deps:
+      - data/silver/frames.parquet
+      - data/silver/annotations.parquet
+      - data/silver/frames_qc.parquet
+      - data/silver/annotations_qc.parquet
+      - src/avdata/curate/run.py
+      - src/avdata/curate/scenarios.py
+      - src/avdata/curate/labels2d.py
+      - src/avdata/geometry.py
+    params:
+      - curation
+    outs:
+      - data/gold
+    metrics:
+      - reports/curation.json:
+          cache: false
+
+  export_yolo:
+    cmd: avdata export-yolo
+    deps:
+      - data/gold
+      - ${data.raw_dir}/samples
+      - src/avdata/curate/export_yolo.py
+    outs:
+      - data/ml_ready
+
+  kpis:
+    cmd: avdata kpis
+    deps:
+      - data/silver/frames.parquet
+      - data/silver/sync.parquet
+      - data/silver/frames_qc.parquet
+      - data/silver/annotations_qc.parquet
+      - data/gold
+      - reports/quality/issues.parquet
+      - src/avdata/kpi/run.py
+      - src/avdata/kpi/report.py
+    outs:
+      - reports/coverage.parquet
+      - reports/coverage.html:
+          cache: false
+    metrics:
+      - reports/kpis.json:
+          cache: false
+
+  train:
+    cmd: avdata train
+    deps:
+      - data/ml_ready
+      - src/avdata/train/train.py
+      - src/avdata/train/common.py
+    params:
+      - train
+    outs:
+      - models/detector.pt
+    metrics:
+      - metrics/train.json:
+          cache: false
+
+  evaluate:
+    cmd: avdata evaluate
+    deps:
+      - models/detector.pt
+      - data/ml_ready
+      - src/avdata/train/evaluate.py
+    metrics:
+      - metrics/eval.json:
+          cache: false
+
+  export_onnx:
+    cmd: avdata export-onnx
+    deps:
+      - models/detector.pt
+      - metrics/eval.json
+      - src/avdata/train/export.py
+    params:
+      - train.imgsz
+    outs:
+      - models/detector.onnx
+      - models/model_card.json:
+          cache: false
