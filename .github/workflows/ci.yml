@@ -74,8 +74,8 @@ jobs:
       - name: Pipeline summary
         run: |
           {
-            echo "## Pipeline metrics (synthetic data)"
-            dvc metrics show --md
+            echo "## Pipeline run (synthetic data)"
+            python scripts/ci_summary.py
             echo "## DAG"
             echo '```'
             dvc dag
