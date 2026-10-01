@@ -46,7 +46,20 @@ dvc push
 
 The code is identical for AWS S3 (drop the endpoint) or Azure Blob (`dvc remote add -d az azure://container/path`).
 
-**Option B: DagsHub** (Git mirror + DVC storage + hosted MLflow in one place). Connect your GitHub
+**Option B: Backblaze B2** (S3 API, no credit card needed to start; check the current free allowance)
+
+1. Sign up at backblaze.com, create a **private** bucket, then create an application key limited to it.
+   Keep the key id and the secret (shown once) and the bucket's S3 endpoint (`s3.<region>.backblazeb2.com`).
+
+```bash
+dvc remote add -d b2 s3://<bucket>/dvc
+dvc remote modify b2 endpointurl https://s3.<region>.backblazeb2.com
+dvc remote modify --local b2 access_key_id <keyID>
+dvc remote modify --local b2 secret_access_key <applicationKey>
+dvc push
+```
+
+**Option C: DagsHub** (Git mirror + DVC storage + hosted MLflow in one place). Connect your GitHub
 repo on dagshub.com; its *Remote* button shows the exact DVC and MLflow URLs and credentials.
 
 ## 4. Experiment tracking

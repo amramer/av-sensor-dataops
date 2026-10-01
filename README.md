@@ -25,7 +25,7 @@ raw sensor logs ─► bronze ─► silver ─► quality gate ─► gold ─�
 | **Serving** | ONNX Runtime + FastAPI (2D, 3D, annotated images, demo UI), Prometheus metrics, latency benchmark (CPU / GPU / Jetson) |
 | **Deployment** | Docker, Kubernetes; free hosting: live API on Render, always-on results site on GitHub Pages |
 | **Monitoring** | Grafana: data volume & growth, quality, scenario coverage, label quality, ML readiness, model and service metrics |
-| **Infra** | Docker Compose (MinIO, Postgres, MLflow, Airflow, Prometheus, Grafana), Kubernetes manifests, GitHub Actions |
+| **Infra** | Docker Compose (Postgres, MLflow, Airflow, Prometheus, Grafana), Kubernetes manifests, GitHub Actions |
 
 ---
 
@@ -135,19 +135,20 @@ dvc exp run -S train.epochs=100 -S curation.min_box_px=10   # tracked experiment
 ## Local platform (Docker Compose)
 
 ```bash
-make up            # MinIO :9001, Postgres, MLflow :5000, Prometheus :9090, Grafana :3000
+make up            # Postgres, MLflow :5000, Prometheus :9090, Grafana :3000
 make airflow       # + Airflow :8080 (admin password is printed in the container logs)
 make api           # + inference API :8000/docs (after models/detector.onnx exists)
 ```
 
-Use MinIO as the DVC remote and the MLflow server:
+Use any S3-compatible bucket as the DVC remote (Backblaze B2, Cloudflare R2, AWS S3; see
+`docs/setup.md`). The MLflow server keeps its artifacts in a Docker volume and serves them to
+clients, so clients need no storage credentials:
 
 ```bash
-dvc remote add -d minio s3://dvc-store && dvc remote modify minio endpointurl http://localhost:9000
-dvc remote modify --local minio access_key_id avdata
-dvc remote modify --local minio secret_access_key avdata-secret
-export MLFLOW_TRACKING_URI=http://localhost:5000 AWS_ACCESS_KEY_ID=avdata \
-       AWS_SECRET_ACCESS_KEY=avdata-secret MLFLOW_S3_ENDPOINT_URL=http://localhost:9000
+dvc remote add -d b2 s3://<bucket>/dvc && dvc remote modify b2 endpointurl https://s3.<region>.backblazeb2.com
+dvc remote modify --local b2 access_key_id <keyID>
+dvc remote modify --local b2 secret_access_key <applicationKey>
+export MLFLOW_TRACKING_URI=http://localhost:5000
 export AVDATA_KPI_DB_URL=postgresql+psycopg://avdata:avdata@localhost:5432/kpi
 dvc push && avdata publish-kpis
 ```

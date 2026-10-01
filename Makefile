@@ -30,7 +30,7 @@ lint:  ## ruff lint + format check
 format:  ## auto-format
 	ruff check --fix . && ruff format .
 
-up:  ## start MinIO, Postgres, MLflow, Prometheus, Grafana
+up:  ## start Postgres, MLflow, Prometheus, Grafana
 	docker compose up -d
 
 airflow:  ## start the platform + Airflow (http://localhost:8080)
