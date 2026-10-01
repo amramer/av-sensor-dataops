@@ -1,5 +1,7 @@
 # av-sensor-dataops
 
+[![CI](https://github.com/amramer/av-sensor-dataops/actions/workflows/ci.yml/badge.svg)](https://github.com/amramer/av-sensor-dataops/actions/workflows/ci.yml)
+
 **Automated pipeline that turns raw autonomous-vehicle sensor logs into versioned, quality-checked, ML-ready datasets, then trains a camera detector, fuses it with LiDAR into 3D object detection, evaluates it nuScenes-style, and serves it as a monitored API with a live demo.**
 
 Built on [nuScenes](https://www.nuscenes.org/nuscenes) (camera, LiDAR, radar, GPS/IMU recordings from real test vehicles), starting with the front camera and the top LiDAR. More sensors are a config change, not a code change.
