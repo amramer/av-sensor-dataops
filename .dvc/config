@@ -1,2 +1,6 @@
 [core]
     autostage = true
+    remote = storage
+['remote "storage"']
+    url = s3://amr-av-dataops/dvcstore
+    endpointurl = https://s3.us-east-005.backblazeb2.com/
